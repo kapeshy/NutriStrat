@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Cream White Circle Background -->
+    <path
+        android:fillColor="#FAF8F0"
+        android:pathData="M54,54m-42,0a42,42 0 1,0 84,0a42,42 0 1,0 -84,0" />
+    <!-- Forest Green Eco Leaf Icon -->
+    <group
+        android:translateX="30"
+        android:translateY="30"
+        android:scaleX="2.0"
+        android:scaleY="2.0">
+        <path
+            android:fillColor="#234D3C"
+            android:pathData="M6.05,3C5.02,3 4.2,3.82 4.2,4.85C4.2,9.15 6.97,12.79 10.85,14.19C10.3,14.9 10,15.78 10,16.73C10,19.64 12.36,22 15.27,22H17V20.27C17,17.36 14.64,15 11.73,15C11.5,15 11.27,15.02 11.04,15.05C8.07,13.84 6,10.95 6,7.5C6,6.67 6.67,6 7.5,6H11V3H6.05zM16,3h2v7h-2V3zM19.5,3H21v9h-1.5V3z" />
+    </group>
+</vector>
