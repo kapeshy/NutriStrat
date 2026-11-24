@@ -5,6 +5,7 @@ import org.json.JSONObject
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -42,6 +43,7 @@ import com.example.nutristrat.data.remote.LoginRequest
 import com.example.nutristrat.data.remote.RetrofitClient
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
+import com.example.nutristrat.data.local.database.AppDatabase
 
 private val ForestGreen = Color(0xFF234D3C)
 private val WarmCream = Color(0xFFFAF8F0)
@@ -65,8 +67,11 @@ private val bottomDestinations = listOf(
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        val database = AppDatabase.getDatabase(applicationContext)
 
         setContent {
             NutriStratTheme {
@@ -143,9 +148,20 @@ fun AppNavigation(navController: NavHostController) {
 
         NavHost(
             navController = navController,
-            startDestination = "welcome",
+            startDestination = "splash",
             modifier = Modifier.padding(innerPadding)
         ) {
+            composable("splash") {
+                SplashScreen(
+                    onSplashFinished = {
+                        navController.navigate("welcome") {
+                            popUpTo("splash") {
+                                inclusive = true
+                            }
+                        }
+                    }
+                )
+            }
 
             composable("welcome") {
                 WelcomeScreen(
