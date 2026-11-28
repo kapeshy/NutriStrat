@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -44,6 +45,19 @@ import com.example.nutristrat.data.remote.RetrofitClient
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 import com.example.nutristrat.data.local.database.AppDatabase
+import com.example.nutristrat.data.local.entity.UserEntity
+import com.example.nutristrat.domain.DailyNutritionSummary
+import com.example.nutristrat.domain.model.MealAnalysisResult
+import com.example.nutristrat.ui.dashboard.DashboardMealItem
+import com.example.nutristrat.ui.dashboard.DashboardViewModel
+import com.example.nutristrat.ui.dashboard.NutritionSummaryScreen
+import com.example.nutristrat.ui.dashboard.RecommendationsScreen
+import com.example.nutristrat.ui.history.LoggedMealItem
+import com.example.nutristrat.ui.history.MealHistoryScreen
+import com.example.nutristrat.ui.history.sampleHistoryLogs
+import com.example.nutristrat.ui.scanner.FoodAnalysisScreen
+import com.example.nutristrat.ui.scanner.ScannerScreen
+import com.example.nutristrat.ui.scanner.sampleDecodedFoods
 
 private val ForestGreen = Color(0xFF234D3C)
 private val WarmCream = Color(0xFFFAF8F0)
@@ -71,7 +85,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val database = AppDatabase.getDatabase(applicationContext)
+        AppDatabase.getDatabase(applicationContext)
 
         setContent {
             NutriStratTheme {
@@ -117,6 +131,12 @@ fun AppNavigation(navController: NavHostController) {
     val showBottomBar = currentRoute in mainRoutes
 
     val scope = rememberCoroutineScope()
+
+    val dashboardViewModel = remember { DashboardViewModel() }
+    val dashboardState by dashboardViewModel.uiState.collectAsState()
+
+    var historyLogs by remember { mutableStateOf(sampleHistoryLogs()) }
+    var lastAnalysisResult by remember { mutableStateOf(MealAnalysisResult(sampleDecodedFoods())) }
 
     var registerLoading by remember { mutableStateOf(false) }
     var loginLoading by remember { mutableStateOf(false) }
@@ -222,6 +242,7 @@ fun AppNavigation(navController: NavHostController) {
             }
 
             composable("login") {
+                val context = LocalContext.current
                 LoginScreen(
                     onLogin = { email, password ->
 
@@ -239,6 +260,18 @@ fun AppNavigation(navController: NavHostController) {
                                 )
 
                                 if (response.success) {
+                                    val userName = response.user?.name ?: email.substringBefore("@")
+                                    val userEmail = response.user?.email ?: email
+
+                                    dashboardViewModel.setCurrentUser(userName, userEmail)
+
+                                    try {
+                                        AppDatabase.getDatabase(context).userDao().insertUser(
+                                            UserEntity(name = userName, email = userEmail)
+                                        )
+                                    } catch (_: Exception) {
+                                    }
+
                                     navController.navigate("dashboard") {
                                         popUpTo("welcome") {
                                             inclusive = true
@@ -268,27 +301,108 @@ fun AppNavigation(navController: NavHostController) {
             }
 
             composable("dashboard") {
-                DashboardScreen()
+                DashboardScreen(
+                    userName = dashboardState.userName,
+                    summary = dashboardState.summary,
+                    todayMeals = dashboardState.todayMeals,
+                    onScanMealClick = { navController.navigate("scanner") },
+                    onProfileClick = { navController.navigate("profile") },
+                    onSeeAllMealsClick = { navController.navigate("history") },
+                    onNutritionClick = { navController.navigate("nutrition") }
+                )
+            }
+
+            composable("scanner") {
+                ScannerScreen(
+                    onPhotoCaptured = {
+                        lastAnalysisResult = MealAnalysisResult(sampleDecodedFoods())
+                        navController.navigate("analysis")
+                    },
+                    onGalleryImageSelected = {
+                        lastAnalysisResult = MealAnalysisResult(sampleDecodedFoods())
+                        navController.navigate("analysis")
+                    },
+                    onSimulateScanClick = {
+                        lastAnalysisResult = MealAnalysisResult(sampleDecodedFoods())
+                        navController.navigate("analysis")
+                    }
+                )
+            }
+
+            composable("analysis") {
+                FoodAnalysisScreen(
+                    initialFoods = lastAnalysisResult.detectedFoods,
+                    onBackClick = { navController.popBackStack() },
+                    onSaveMealClick = { result ->
+                        val totalCalories = result.totalCalories
+                        val totalProtein = result.detectedFoods.sumOf { it.protein }.toInt()
+                        val totalCarbs = result.detectedFoods.sumOf { it.carbs }.toInt()
+                        val totalFat = result.detectedFoods.sumOf { it.fat }.toInt()
+                        val mealName = result.detectedFoods.firstOrNull()?.name ?: "Scanned Meal"
+
+                        val newDashboardMeal = DashboardMealItem(
+                            name = mealName,
+                            time = "Just now",
+                            calories = totalCalories,
+                            protein = totalProtein,
+                            carbs = totalCarbs,
+                            fat = totalFat
+                        )
+                        dashboardViewModel.addSampleMeal(newDashboardMeal)
+
+                        val newLoggedMeal = LoggedMealItem(
+                            id = (historyLogs.maxOfOrNull { it.id } ?: 0) + 1,
+                            mealType = "Lunch",
+                            description = result.detectedFoods.joinToString(", ") { it.name },
+                            calories = totalCalories
+                        )
+                        historyLogs = historyLogs + newLoggedMeal
+
+                        navController.navigate("recommendations")
+                    }
+                )
+            }
+
+            composable("recommendations") {
+                RecommendationsScreen(
+                    viewModel = dashboardViewModel,
+                    onNavigateBack = {
+                        navController.navigate("dashboard") {
+                            popUpTo("dashboard") {
+                                inclusive = true
+                            }
+                        }
+                    }
+                )
             }
 
             composable("nutrition") {
-                PlaceholderScreen(
-                    title = "Nutrition",
-                    description = "Your nutrition summary will appear here."
+                NutritionSummaryScreen(
+                    viewModel = dashboardViewModel,
+                    onNavigateToScanner = { navController.navigate("scanner") },
+                    onNavigateToHistory = { navController.navigate("history") },
+                    onNavigateToRecommendations = { navController.navigate("recommendations") }
                 )
             }
 
             composable("history") {
-                PlaceholderScreen(
-                    title = "Meal History",
-                    description = "Your saved meals will appear here."
+                MealHistoryScreen(
+                    initialLogs = historyLogs
                 )
             }
 
             composable("profile") {
-                PlaceholderScreen(
-                    title = "Your Profile",
-                    description = "Your personal details and preferences will appear here."
+                ProfileScreen(
+                    userName = dashboardState.userName,
+                    userEmail = dashboardState.userEmail,
+                    summary = dashboardState.summary,
+                    onLogoutClick = {
+                        navController.navigate("welcome") {
+                            popUpTo("dashboard") {
+                                inclusive = true
+                            }
+                        }
+                    }
                 )
             }
         }
@@ -503,7 +617,7 @@ fun RegisterScreen(
         if (error.isNotBlank() || apiError.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
             Text(
-                text = if (apiError.isNotBlank()) apiError else error,
+                text = apiError.ifBlank { error },
                 color = Color(0xFFB3261E),
                 fontSize = 14.sp
             )
@@ -613,7 +727,7 @@ fun LoginScreen(
         if (error.isNotBlank() || apiError.isNotBlank()) {
             Spacer(Modifier.height(12.dp))
             Text(
-                text = if (apiError.isNotBlank()) apiError else error,
+                text = apiError.ifBlank { error },
                 color = Color(0xFFB3261E),
                 fontSize = 14.sp
             )
@@ -704,7 +818,24 @@ fun NutriField(
 }
 
 @Composable
-fun DashboardScreen() {
+fun DashboardScreen(
+    userName: String = "Guest",
+    summary: DailyNutritionSummary = DailyNutritionSummary(
+        consumedCalories = 0,
+        targetCalories = 2200,
+        consumedProtein = 0,
+        targetProtein = 120,
+        consumedCarbs = 0,
+        targetCarbs = 260,
+        consumedFat = 0,
+        targetFat = 70
+    ),
+    todayMeals: List<DashboardMealItem> = emptyList(),
+    onScanMealClick: () -> Unit = {},
+    onProfileClick: () -> Unit = {},
+    onSeeAllMealsClick: () -> Unit = {},
+    onNutritionClick: () -> Unit = {}
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -721,9 +852,9 @@ fun DashboardScreen() {
                 Text("Good morning,", color = MutedGreen, fontSize = 15.sp)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Let's eat well.",
+                    "Let's eat well, $userName.",
                     color = ForestGreen,
-                    fontSize = 28.sp,
+                    fontSize = 26.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -731,7 +862,8 @@ fun DashboardScreen() {
             Box(
                 modifier = Modifier
                     .size(48.dp)
-                    .background(LimeGreen, CircleShape),
+                    .background(LimeGreen, CircleShape)
+                    .clickable { onProfileClick() },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -784,6 +916,7 @@ fun DashboardScreen() {
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(LimeGreen, RoundedCornerShape(14.dp))
+                    .clickable { onScanMealClick() }
                     .padding(15.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
@@ -808,10 +941,15 @@ fun DashboardScreen() {
 
         Spacer(Modifier.height(12.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            NutritionCard("Calories", "—", "kcal", Modifier.weight(1f))
-            NutritionCard("Protein", "—", "grams", Modifier.weight(1f))
-            NutritionCard("Water", "—", "glasses", Modifier.weight(1f))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onNutritionClick() }
+        ) {
+            NutritionCard("Calories", "${summary.consumedCalories}", "kcal", Modifier.weight(1f))
+            NutritionCard("Protein", "${summary.consumedProtein}", "g", Modifier.weight(1f))
+            NutritionCard("Carbs", "${summary.consumedCarbs}", "g", Modifier.weight(1f))
         }
 
         Spacer(Modifier.height(24.dp))
@@ -827,7 +965,12 @@ fun DashboardScreen() {
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
-            Text("See all", color = MutedGreen, fontSize = 13.sp)
+            Text(
+                "See all",
+                color = MutedGreen,
+                fontSize = 13.sp,
+                modifier = Modifier.clickable { onSeeAllMealsClick() }
+            )
         }
 
         Spacer(Modifier.height(12.dp))
@@ -839,32 +982,76 @@ fun DashboardScreen() {
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(46.dp)
-                        .background(SoftGreen, RoundedCornerShape(14.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("🍳", fontSize = 23.sp)
+            if (todayMeals.isEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .background(SoftGreen, RoundedCornerShape(14.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("🍳", fontSize = 23.sp)
+                    }
+
+                    Spacer(Modifier.width(12.dp))
+
+                    Column {
+                        Text(
+                            "No meals recorded yet",
+                            color = ForestGreen,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        Spacer(Modifier.height(3.dp))
+
+                        Text(
+                            "Your saved meals will appear here.",
+                            color = MutedGreen,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
+            } else {
+                todayMeals.takeLast(3).reversed().forEach { meal ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .background(SoftGreen, RoundedCornerShape(14.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🥗", fontSize = 23.sp)
+                        }
 
-                Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(12.dp))
 
-                Column {
-                    Text(
-                        "No meals recorded yet",
-                        color = ForestGreen,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                meal.name,
+                                color = ForestGreen,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp
+                            )
 
-                    Spacer(Modifier.height(3.dp))
+                            Spacer(Modifier.height(3.dp))
 
-                    Text(
-                        "Your saved meals will appear here.",
-                        color = MutedGreen,
-                        fontSize = 12.sp
-                    )
+                            Text(
+                                "${meal.time} • P:${meal.protein}g  C:${meal.carbs}g  F:${meal.fat}g",
+                                color = MutedGreen,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        Text(
+                            "${meal.calories} kcal",
+                            color = ForestGreen,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
                 }
             }
         }
@@ -902,6 +1089,148 @@ fun NutritionCard(
         )
         Spacer(Modifier.height(3.dp))
         Text(unit, color = MutedGreen, fontSize = 10.sp)
+    }
+}
+
+@Composable
+fun ProfileScreen(
+    userName: String,
+    userEmail: String,
+    summary: DailyNutritionSummary,
+    onLogoutClick: () -> Unit
+) {
+    val initial = userName.firstOrNull()?.uppercase() ?: "U"
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(WarmCream)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Profile",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            color = ForestGreen,
+            modifier = Modifier.align(Alignment.Start)
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Box(
+            modifier = Modifier
+                .size(100.dp)
+                .background(LimeGreen, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(88.dp)
+                    .background(ForestGreen, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = initial,
+                    fontSize = 42.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = WarmCream
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = userName,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = ForestGreen
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Text(
+            text = userEmail.ifBlank { "No email provided" },
+            fontSize = 14.sp,
+            color = MutedGreen
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(SoftWhite, RoundedCornerShape(20.dp))
+                .padding(20.dp)
+        ) {
+            Text(
+                text = "Daily Nutrition Targets",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = ForestGreen
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                ProfileTargetItem("Calories", "${summary.targetCalories} kcal")
+                ProfileTargetItem("Protein", "${summary.targetProtein}g")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                ProfileTargetItem("Carbs", "${summary.targetCarbs}g")
+                ProfileTargetItem("Fat", "${summary.targetFat}g")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(40.dp))
+
+        Button(
+            onClick = onLogoutClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFB3261E)
+            )
+        ) {
+            Text(
+                text = "Log Out",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileTargetItem(label: String, value: String) {
+    Column(
+        modifier = Modifier
+            .background(SoftGreen, RoundedCornerShape(12.dp))
+            .padding(vertical = 12.dp, horizontal = 16.dp)
+            .width(130.dp)
+    ) {
+        Text(label, color = MutedGreen, fontSize = 12.sp)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            value,
+            color = ForestGreen,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 

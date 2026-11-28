@@ -5,7 +5,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
 
-        private const val BASE_URL = "http://192.168.100.13/nutristrat_api/"
+        private const val BASE_URL = "http://127.0.0.1:8080/nutristrat_api/"
 
     val api: NutriStratApi by lazy {
         Retrofit.Builder()

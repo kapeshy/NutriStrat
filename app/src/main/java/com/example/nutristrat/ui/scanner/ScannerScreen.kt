@@ -109,7 +109,7 @@ fun ScannerScreen(
                         .clickable{onSimulateScanClick()},
                     shape=RoundedCornerShape(20.dp),
                     color=Color(0xFF1E3A2B),
-                    border=BorderStroke(2.dp,Color(0xFFAE581))
+                    border=BorderStroke(2.dp,Color(0xFFAED581))
                 ){
                     Column(
                         horizontalAlignment=Alignment.CenterHorizontally,

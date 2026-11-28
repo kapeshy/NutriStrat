@@ -20,7 +20,8 @@ data class DashboardMealItem(
 )
 
 data class DashboardUiState(
-    val userName: String = "Alex",
+    val userName: String = "Guest",
+    val userEmail: String = "",
     val summary: DailyNutritionSummary,
     val recommendation: CoachRecommendation,
     val todayMeals: List<DashboardMealItem>
@@ -40,6 +41,15 @@ class DashboardViewModel(
 
     private val _uiState = MutableStateFlow(buildState(initialMeals))
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
+
+    fun setCurrentUser(name: String, email: String) {
+        _uiState.update { current ->
+            current.copy(
+                userName = name.ifBlank { "User" },
+                userEmail = email
+            )
+        }
+    }
 
     private fun buildState(meals: List<DashboardMealItem>): DashboardUiState {
         val summary = DailyNutritionSummary(
